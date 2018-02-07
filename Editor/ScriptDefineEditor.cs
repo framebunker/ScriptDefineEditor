@@ -83,11 +83,13 @@ namespace framebunker
 		static bool s_Applying = false;
 		static GUIStyle
 			s_BoldToggle,
-			s_ToolbarLabel;
+			s_ToolbarLabel,
+			s_SearchTextField,
+			s_SearchCancelButton;
 		static string s_NewIgnoredPath = "";
 
 
-		static GUIStyle BoldToggleStyle
+		static GUIStyle BoldToggle
 		{
 			get
 			{
@@ -110,6 +112,24 @@ namespace framebunker
 					margin = new RectOffset (0, 0, 4, 4),
 					padding = new RectOffset()
 				};
+			}
+		}
+
+
+		static GUIStyle SearchTextField
+		{
+			get
+			{
+				return s_SearchTextField = s_SearchTextField ?? GUI.skin.FindStyle ("ToolbarSeachTextField");
+			}
+		}
+
+
+		static GUIStyle SearchCancelButton
+		{
+			get
+			{
+				return s_SearchCancelButton = s_SearchCancelButton ?? GUI.skin.FindStyle ("ToolbarSeachCancelButton");
 			}
 		}
 
@@ -319,8 +339,10 @@ namespace framebunker
 		HashSet<string> m_Defines = new HashSet<string> ();
 		List<string>
 			m_ToEnable = new List<string> (),
-			m_ToDisable = new List<string> ();
+			m_ToDisable = new List<string> (),
+			m_ActiveList = new List<string> ();
 		Vector2 m_Scroll;
+		string m_Search, m_ActiveSearch;
 
 
 		ScriptDefineEditor ()
@@ -339,6 +361,8 @@ namespace framebunker
 			{
 				m_Defines.Add (current);
 			}
+
+			RefreshActiveSearch ();
 
 			Repaint ();
 		}
@@ -380,6 +404,7 @@ namespace framebunker
 			}
 
 			CachedDefines = m_Defines;
+			RefreshActiveSearch ();
 
 			EditorUtility.ClearProgressBar ();
 		}
@@ -411,6 +436,41 @@ namespace framebunker
 		}
 
 
+		void SetActiveSearch (string input)
+		{
+			if (string.IsNullOrEmpty (input))
+			{
+				if (string.IsNullOrEmpty (m_ActiveSearch))
+				{
+					return;
+				}
+			}
+			else
+			{
+				input = input.Trim ().ToLower ();
+				if (m_ActiveSearch == input)
+				{
+					return;
+				}
+			}
+
+			m_ActiveSearch = input;
+
+			RefreshActiveSearch ();
+		}
+
+
+		void RefreshActiveSearch ()
+		{
+			m_ActiveList.Clear ();
+			m_ActiveList.AddRange (
+				string.IsNullOrEmpty (m_ActiveSearch)
+					? m_Defines
+					: m_Defines.Where (d => d.ToLower ().Contains (m_ActiveSearch))
+			);
+		}
+
+
 		void OnGUI ()
 		{
 			const string
@@ -423,9 +483,9 @@ namespace framebunker
 
 
 			GUILayout.BeginHorizontal (EditorStyles.toolbar);
-				GUILayout.Label (string.Format (kDefinesLabelFormat, m_Defines.Count), ToolbarLabel);
-				GUILayout.FlexibleSpace ();
-				if (GUILayout.Button (kRefreshLabel, EditorStyles.toolbarButton))
+				GUILayout.Label (string.Format (kDefinesLabelFormat, m_Defines.Count), ToolbarLabel, GUILayout.ExpandWidth (false));
+				SetActiveSearch (m_Search = SearchField (m_Search));
+				if (GUILayout.Button (kRefreshLabel, EditorStyles.toolbarButton, GUILayout.ExpandWidth (false)))
 				{
 					EditorApplication.delayCall += Refresh;
 				}
@@ -433,7 +493,7 @@ namespace framebunker
 
 			m_Scroll = GUILayout.BeginScrollView (m_Scroll);
 				GUILayout.BeginVertical ();
-					foreach (string current in m_Defines)
+					foreach (string current in m_ActiveList)
 					{
 						DefineItem (current);
 					}
@@ -471,10 +531,33 @@ namespace framebunker
 		}
 
 
+		static string SearchField (string text)
+		{
+			GUILayout.BeginHorizontal ();
+			GUILayout.Space (5f);
+
+			text = EditorGUILayout.TextField (
+				text,
+				SearchTextField
+			);
+
+			if (GUILayout.Button (GUIContent.none, SearchCancelButton))
+			{
+				text = "";
+				GUIUtility.keyboardControl = -1;
+			}
+
+			GUILayout.Space (5f);
+			GUILayout.EndHorizontal ();
+
+			return text;
+		}
+
+
 		void DefineItem (string name)
 		{
 			bool wasSet = DefineIsSet (name);
-			bool isSet = GUILayout.Toggle (wasSet, name, DefineIsModified (name) ? BoldToggleStyle : GUI.skin.toggle);
+			bool isSet = GUILayout.Toggle (wasSet, name, DefineIsModified (name) ? BoldToggle : GUI.skin.toggle);
 
 			if (isSet == wasSet)
 			{
@@ -494,14 +577,22 @@ namespace framebunker
 
 		void Enable (string name)
 		{
-			m_ToEnable.Add (name);
+			if (!EnabledDefines.Contains (name))
+			{
+				m_ToEnable.Add (name);
+			}
+
 			m_ToDisable.Remove (name);
 		}
 
 
 		void Disable (string name)
 		{
-			m_ToDisable.Add (name);
+			if (EnabledDefines.Contains (name))
+			{
+				m_ToDisable.Add (name);
+			}
+
 			m_ToEnable.Remove (name);
 		}
 
